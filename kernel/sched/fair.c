@@ -9238,6 +9238,7 @@ struct sg_lb_stats {
 	unsigned int nr_numa_running;
 	unsigned int nr_preferred_running;
 #endif
+	int has_eqos_ee; /* The group has EQOS-EE tasks at the back. */
 };
 
 /*
@@ -9518,6 +9519,45 @@ group_type group_classify(unsigned int imbalance_pct,
 	return group_has_spare;
 }
 
+static int rq_last_task_eqos(int dst_cpu, struct rq *rq, u64 *qos_hints)
+{
+	struct list_head *tasks = &rq->cfs_tasks;
+	struct task_struct *p;
+	struct rq_flags rf;
+	int ret = -EINVAL;
+
+	rq_lock_irqsave(rq, &rf);
+	if (list_empty(tasks))
+		goto out;
+
+	p = list_last_entry(tasks, struct task_struct, se.group_node);
+	if (p->flags & PF_EXITING || is_idle_task(p) ||
+	    !cpumask_test_cpu(dst_cpu, p->cpus_ptr))
+		goto out;
+
+	ret = 0;
+	*qos_hints = p->qos_hints;
+out:
+	rq_unlock_irqrestore(rq, &rf);
+	return ret;
+}
+
+/* Called only if cpu_of(@rq) is not idle and has tasks running. */
+static void update_sg_lb_eqos_stats(int dst_cpu, struct sg_lb_stats *sgs,
+				    struct rq *rq)
+{
+	u64 qos_hints;
+
+	if (rq_last_task_eqos(dst_cpu, rq, &qos_hints))
+		return;
+
+	/*
+	 * Caller ensures that sgs:: has_eqos_ee is zero before traversing
+	 * the runqueues of the sched group. See update_sg_lb_stats()
+	 */
+	sgs->has_eqos_ee |= !!(qos_hints & EQOS_MAX_EFFICIENCY);
+}
+
 /**
  * sched_use_asym_prio - Check whether asym_packing priority must be used
  * @sd:		The scheduling domain of the load balancing
@@ -9722,6 +9762,8 @@ static inline void update_sg_lb_stats(struct lb_env *env,
 			if (sgs->group_misfit_task_load < load)
 				sgs->group_misfit_task_load = load;
 		}
+
+		update_sg_lb_eqos_stats(env->dst_cpu, sgs, rq);
 	}
 
 	sgs->group_capacity = group->sgc->capacity;
