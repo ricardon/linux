@@ -2064,6 +2064,12 @@ static inline void uclamp_post_fork(struct task_struct *p) { }
 static inline void init_uclamp(void) { }
 #endif /* CONFIG_UCLAMP_TASK */
 
+static void __setscheduler_qos(struct task_struct *p,
+			       const struct sched_attr *attr)
+{
+	p->qos_hints = attr->sched_qos_hints;
+}
+
 bool sched_task_on_rq(struct task_struct *p)
 {
 	return task_on_rq_queued(p);
@@ -8104,6 +8110,7 @@ SYSCALL_DEFINE3(sched_setattr, pid_t, pid, struct sched_attr __user *, uattr,
 	if (likely(p)) {
 		if (attr.sched_flags & SCHED_FLAG_KEEP_PARAMS)
 			get_params(p, &attr);
+		__setscheduler_qos(p, &attr);
 		retval = sched_setattr(p, &attr);
 		put_task_struct(p);
 	}

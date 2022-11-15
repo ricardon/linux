@@ -18,6 +18,7 @@ Scheduler
     sched-util-clamp
     sched-nice-design
     sched-rt-group
+    sched-qos
     sched-stats
     sched-debug
 

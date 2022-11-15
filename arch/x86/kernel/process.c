@@ -227,6 +227,8 @@ int copy_thread(struct task_struct *p, const struct kernel_clone_args *args)
 	 */
 	p->thread.pkru = read_pkru();
 
+	p->qos_hints = 0;
+
 	frame->bx = 0;
 	*childregs = *current_pt_regs();
 	childregs->ax = 0;

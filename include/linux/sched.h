@@ -1531,6 +1531,8 @@ struct task_struct {
 	 */
 	union rv_task_monitor		rv[RV_PER_TASK_MONITORS];
 #endif
+	/* Per task Quality Of Service scheduling hints */
+	u64	qos_hints;
 
 #ifdef CONFIG_USER_EVENTS
 	struct user_event_mm		*user_event_mm;

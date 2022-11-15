@@ -120,6 +120,8 @@ struct sched_attr {
 	__u32 sched_util_min;
 	__u32 sched_util_max;
 
+	/* QOS hints */
+	__u64 sched_qos_hints;
 };
 
 #endif /* _UAPI_LINUX_SCHED_TYPES_H */
