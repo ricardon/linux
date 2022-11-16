@@ -3588,6 +3588,14 @@ static const struct inode_operations proc_tid_comm_inode_operations = {
 		.permission	= proc_tid_comm_permission,
 };
 
+static int proc_qos_show(struct seq_file *m, struct pid_namespace *ns,
+			 struct pid *pid, struct task_struct *task)
+{
+	seq_printf(m, "%llu\n", task->qos_hints);
+
+	return 0;
+}
+
 /*
  * Tasks
  */
@@ -3691,6 +3699,7 @@ static const struct pid_entry tid_base_stuff[] = {
 	ONE("ksm_merging_pages",  S_IRUSR, proc_pid_ksm_merging_pages),
 	ONE("ksm_stat",  S_IRUSR, proc_pid_ksm_stat),
 #endif
+	ONE("qos", S_IRUGO, proc_qos_show),
 };
 
 static int proc_tid_base_readdir(struct file *file, struct dir_context *ctx)
