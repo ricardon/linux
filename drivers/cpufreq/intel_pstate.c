@@ -215,6 +215,7 @@ struct global_params {
  * @epp_default:	Power on default HWP energy performance
  *			preference/bias
  * @epp_cached		Cached HWP energy-performance preference value
+ * @epp_dirty		EPP has been touched vis sysfs
  * @hwp_req_cached:	Cached value of the last HWP Request MSR
  * @hwp_cap_cached:	Cached value of the last HWP Capabilities MSR
  * @last_io_update:	Last time when IO wake flag was set
@@ -254,6 +255,7 @@ struct cpudata {
 	s16 epp_policy;
 	s16 epp_default;
 	s16 epp_cached;
+	s16 epp_dirty;
 	u64 hwp_req_cached;
 	u64 hwp_cap_cached;
 	u64 last_io_update;
@@ -739,11 +741,105 @@ static int intel_pstate_set_epp(struct cpudata *cpu, u32 epp)
 	 * function, so it cannot run in parallel with the update below.
 	 */
 	WRITE_ONCE(cpu->hwp_req_cached, value);
+
 	ret = wrmsrl_on_cpu(cpu->cpu, MSR_HWP_REQUEST, value);
 	if (!ret)
 		cpu->epp_cached = epp;
 
 	return ret;
+}
+
+static int intel_pstate_set_epp_on_this_cpu(struct cpudata *cpu, u32 epp)
+{
+	/*
+	 * Use the cached HWP Request MSR value, because in the active mode the
+	 * register itself may be updated by intel_pstate_hwp_boost_up() or
+	 * intel_pstate_hwp_boost_down() at any time.
+	 */
+	u64 value = READ_ONCE(cpu->hwp_req_cached);
+
+	value &= ~GENMASK_ULL(31, 24);
+	value |= (u64)epp << 24;
+	/*
+	 * The only other updater of hwp_req_cached in the active mode,
+	 * intel_pstate_hwp_set(), is called under the same lock as this
+	 * function, so it cannot run in parallel with the update below.
+	 */
+	WRITE_ONCE(cpu->hwp_req_cached, value);
+
+	wrmsrl(MSR_HWP_REQUEST, value);
+	cpu->epp_cached = epp;
+
+	return 0;
+}
+
+static int eqos_2_epp[EQOS_NUM];
+
+static void arch_eqos_init(void)
+{
+	if (!hwp_active)
+		return;
+
+	eqos_2_epp[EQOS_DEFAULT] = 128;
+	eqos_2_epp[EQOS_MAX_PERFORMANCE] = 0;
+	eqos_2_epp[EQOS_BALANCED_PERFORMANCE] = 64;
+	eqos_2_epp[EQOS_BALANCED_EFFICIENCY] = 192;
+	eqos_2_epp[EQOS_MAX_EFFICIENCY] = 255;
+
+	printk_once("EQOS v0.1\n");
+	/* TODO: model-specific tweaks go here */
+}
+
+#define sched_qos_2_eqos_hint(hint) ((hint) & 0xF)
+/*
+ * arch_eqos_set()
+ *
+ * 1. Take QOS hint in current task, translate it into EPP hint
+ * 2. Resolve task requested EPP with driver and sysfs requests
+ * 3. write MSR HWP.REQ if EPP changed
+ *
+ * called from system call
+ * called from context switch
+ */
+void arch_eqos_set(void)
+{
+	unsigned int eqos_hint, epp_request;
+	struct cpudata *cpu_data;
+
+	if (!hwp_active)
+		return;
+
+	if (!all_cpu_data)
+		return;
+
+	cpu_data = all_cpu_data[task_cpu(current)];
+	if (!cpu_data)
+		return;
+
+	/*
+	 * performance police (EPP=0) takes precidence over per-task hints
+	 */
+	if (cpu_data->epp_policy == CPUFREQ_POLICY_PERFORMANCE)
+		return;
+
+	/*
+	 * sysfs per=CPU EPP writes take precidence over per-task hints
+	 */
+	if (cpu_data->epp_dirty)
+		return;
+
+	eqos_hint = sched_qos_2_eqos_hint(current->qos_hints);
+
+	if (eqos_hint >= EQOS_NUM)
+		return;
+
+	if (eqos_hint == EQOS_DEFAULT)
+		epp_request = cpu_data->epp_default;
+	else
+		epp_request = eqos_2_epp[eqos_hint];
+
+	if (cpu_data->epp_cached != epp_request)
+		(void)intel_pstate_set_epp_on_this_cpu(cpu_data, epp_request);
 }
 
 static int intel_pstate_set_energy_pref_index(struct cpudata *cpu_data,
@@ -770,7 +866,12 @@ static int intel_pstate_set_energy_pref_index(struct cpudata *cpu_data,
 		if (epp > 0 && cpu_data->policy == CPUFREQ_POLICY_PERFORMANCE)
 			return -EBUSY;
 
-		ret = intel_pstate_set_epp(cpu_data, epp);
+		(void)intel_pstate_set_epp(cpu_data, epp);
+		if (epp == cpu_data->epp_default)
+			cpu_data->epp_dirty = 0;
+		else
+			cpu_data->epp_dirty = 1;
+
 	} else {
 		if (epp == -EINVAL)
 			epp = (pref_index - 1) << 2;
@@ -852,7 +953,12 @@ static ssize_t store_energy_performance_preference(
 			int err;
 
 			cpufreq_stop_governor(policy);
-			ret = intel_pstate_set_epp(cpu, epp);
+			(void)intel_pstate_set_epp(cpu, epp);
+
+			if (epp == cpu->epp_default)
+				cpu->epp_dirty = 0;
+			else
+				cpu->epp_dirty = 1;
 			err = cpufreq_start_governor(policy);
 			if (!ret)
 				ret = err;
@@ -3518,6 +3624,8 @@ hwp_cpu_matched:
 	} else if (boot_cpu_has(X86_FEATURE_HYBRID_CPU)) {
 		pr_warn("Problematic setup: Hybrid processor with disabled HWP\n");
 	}
+
+	arch_eqos_init();
 
 	return 0;
 }

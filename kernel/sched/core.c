@@ -2064,10 +2064,18 @@ static inline void uclamp_post_fork(struct task_struct *p) { }
 static inline void init_uclamp(void) { }
 #endif /* CONFIG_UCLAMP_TASK */
 
+#if CONFIG_X86_INTEL_PSTATE
+void arch_eqos_set(void);
+#else
+static inline void arch_eqos_set(void) {}
+#endif
+
 static void __setscheduler_qos(struct task_struct *p,
 			       const struct sched_attr *attr)
 {
 	p->qos_hints = attr->sched_qos_hints;
+
+	arch_eqos_set();
 }
 
 bool sched_task_on_rq(struct task_struct *p)

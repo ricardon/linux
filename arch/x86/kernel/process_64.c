@@ -546,6 +546,12 @@ void compat_start_thread(struct pt_regs *regs, u32 new_ip, u32 new_sp, bool x32)
 }
 #endif
 
+#if CONFIG_X86_INTEL_PSTATE
+void arch_eqos_set(void);
+#else
+static inline void arch_eqos_set(void) {}
+#endif
+
 /*
  *	switch_to(x,y) should switch tasks from x to y.
  *
@@ -660,6 +666,9 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 
 	/* Load the Intel cache allocation PQR MSR. */
 	resctrl_sched_in(next_p);
+
+	/* Load any non-default EPP request */
+	arch_eqos_set();
 
 	return prev_p;
 }
