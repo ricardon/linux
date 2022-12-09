@@ -1932,6 +1932,17 @@ extern int sched_setattr(struct task_struct *, const struct sched_attr *);
 extern int sched_setattr_nocheck(struct task_struct *, const struct sched_attr *);
 extern struct task_struct *idle_task(int cpu);
 
+/* Per Task QOS Hints */
+
+enum task_eqos_hints {
+	EQOS_DEFAULT = 0,
+	EQOS_MAX_PERFORMANCE,
+	EQOS_BALANCED_PERFORMANCE,
+	EQOS_BALANCED_EFFICIENCY,
+	EQOS_MAX_EFFICIENCY,
+	EQOS_NUM
+};
+
 /**
  * is_idle_task - is the specified task an idle task?
  * @p: the task in question.
