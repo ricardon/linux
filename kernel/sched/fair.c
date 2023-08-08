@@ -9239,6 +9239,7 @@ struct sg_lb_stats {
 	unsigned int nr_preferred_running;
 #endif
 	int has_eqos_ee; /* The group has EQOS-EE tasks at the back. */
+	unsigned int group_asym_packing_inv;
 };
 
 /*
@@ -9583,6 +9584,7 @@ static bool sched_use_asym_prio(struct sched_domain *sd, int cpu)
  * @sds:	Load-balancing data with statistics of the local group
  * @sgs:	Load-balancing statistics of the candidate busiest group
  * @group:	The candidate busiest group
+ * @inv:	Look for inverse priority
  *
  * @env::dst_cpu can do asym_packing if it has higher priority than the
  * preferred CPU of @group.
@@ -9600,7 +9602,7 @@ static bool sched_use_asym_prio(struct sched_domain *sd, int cpu)
  */
 static inline bool
 sched_asym(struct lb_env *env, struct sd_lb_stats *sds,  struct sg_lb_stats *sgs,
-	   struct sched_group *group)
+	   struct sched_group *group, bool inv)
 {
 	/* Ensure that the whole local core is idle, if applicable. */
 	if (!sched_use_asym_prio(env->sd, env->dst_cpu))
@@ -9615,7 +9617,10 @@ sched_asym(struct lb_env *env, struct sd_lb_stats *sds,  struct sg_lb_stats *sgs
 			return false;
 	}
 
-	return sched_asym_prefer(env->dst_cpu, group->asym_prefer_cpu);
+	if (!inv)
+		return sched_asym_prefer(env->dst_cpu, group->asym_prefer_cpu);
+	else
+		return sched_asym_prefer(group->asym_prefer_cpu, env->dst_cpu);
 }
 
 /* One group has more than one SMT CPU while the other group does not */
@@ -9773,8 +9778,16 @@ static inline void update_sg_lb_stats(struct lb_env *env,
 	/* Check if dst CPU is idle and preferred to this group */
 	if (!local_group && env->sd->flags & SD_ASYM_PACKING &&
 	    env->idle != CPU_NOT_IDLE && sgs->sum_h_nr_running &&
-	    sched_asym(env, sds, sgs, group)) {
+	    sched_asym(env, sds, sgs, group, false)) {
 		sgs->group_asym_packing = 1;
+	}
+
+	/* Check if dst CPU is idle and preferred to this group */
+	if (!local_group && env->sd->flags & SD_ASYM_PACKING &&
+	    env->idle != CPU_NOT_IDLE && sgs->sum_h_nr_running &&
+	    sgs->has_eqos_ee &&
+	    sched_asym(env, sds, sgs, group, true)) {
+		sgs->group_asym_packing_inv = 1;
 	}
 
 	/* Check for loaded SMT group to be balanced to dst CPU */
