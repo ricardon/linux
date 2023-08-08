@@ -8532,8 +8532,13 @@ enum group_type {
 	 */
 	group_asym_packing,
 	/*
+	 * Only for EE tasks. These tasks are moved to CPUs of lower priority.
+	 */
+	group_asym_packing_inv,
+	/*
 	 * The tasks' affinity constraints previously prevented the scheduler
 	 * from balancing the load across the system.
+	 *
 	 */
 	group_imbalanced,
 	/*
@@ -9508,6 +9513,9 @@ group_type group_classify(unsigned int imbalance_pct,
 	if (sgs->group_asym_packing)
 		return group_asym_packing;
 
+	if (sgs->group_asym_packing_inv)
+		return group_asym_packing_inv;
+
 	if (sgs->group_smt_balance)
 		return group_smt_balance;
 
@@ -9869,6 +9877,16 @@ static bool update_sd_pick_busiest(struct lb_env *env,
 			return false;
 		break;
 
+	case group_asym_packing_inv:
+		/*
+		 * Do not select @sg if it has lower priority than @busiest.
+		 * Once we are done traversing all the scheduling groups we will
+		 * select the group with highest priority with EE tasks.
+		 */
+		if (sched_asym_prefer(sds->busiest->asym_prefer_cpu, sg->asym_prefer_cpu))
+			return false;
+		break;
+
 	case group_misfit_task:
 		/*
 		 * If we have more than one misfit sg go with the biggest
@@ -10125,6 +10143,7 @@ static bool update_pick_idlest(struct sched_group *idlest,
 
 	case group_imbalanced:
 	case group_asym_packing:
+	case group_asym_packing_inv:
 	case group_smt_balance:
 		/* Those types are not used in the slow wakeup path */
 		return false;
@@ -10257,6 +10276,7 @@ find_idlest_group(struct sched_domain *sd, struct task_struct *p, int this_cpu)
 
 	case group_imbalanced:
 	case group_asym_packing:
+	case group_asym_packing_inv:
 	case group_smt_balance:
 		/* Those type are not used in the slow wakeup path */
 		return NULL;
@@ -10738,7 +10758,8 @@ static struct sched_group *find_busiest_group(struct lb_env *env)
 	}
 
 	/* ASYM feature bypasses nice load balance check */
-	if (busiest->group_type == group_asym_packing)
+	if (busiest->group_type == group_asym_packing ||
+	    busiest->group_type == group_asym_packing_inv)
 		goto force_balance;
 
 	/*
@@ -10966,6 +10987,7 @@ static struct rq *find_busiest_queue(struct lb_env *env,
 			break;
 
 		case migrate_task:
+		case migrate_task_inv:
 			if (busiest_nr < nr_running) {
 				busiest_nr = nr_running;
 				busiest = rq;
