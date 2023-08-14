@@ -8552,6 +8552,7 @@ enum migration_type {
 	migrate_load = 0,
 	migrate_util,
 	migrate_task,
+	migrate_task_inv,
 	migrate_misfit
 };
 
@@ -8919,6 +8920,12 @@ static int detach_tasks(struct lb_env *env)
 			break;
 
 		case migrate_task:
+			env->imbalance--;
+			break;
+
+		case migrate_task_inv:
+			if (!(p->qos_hints & EQOS_MAX_EFFICIENCY))
+				goto next;
 			env->imbalance--;
 			break;
 
@@ -10532,6 +10539,17 @@ static inline void calculate_imbalance(struct lb_env *env, struct sd_lb_stats *s
 		return;
 	}
 
+	if (busiest->group_type == group_asym_packing_inv) {
+		/*
+		 * All we know is that there is an EE task at the back of one of
+		 * the runqueues of the busiest group. Limit imbalance to one
+		 * to not try (and fail) to balance more.
+		 */
+		env->migration_type = migrate_task_inv;
+		env->imbalance = 1;
+		return;
+	}
+
 	if (busiest->group_type == group_smt_balance) {
 		/* Reduce number of tasks sharing CPU capacity */
 		env->migration_type = migrate_task;
@@ -10930,11 +10948,15 @@ static struct rq *find_busiest_queue(struct lb_env *env,
 		 *
 		 * If balancing between cores, let lower priority CPUs help
 		 * SMT cores with more than one busy sibling.
+		 *
+		 * Also let lower priority CPUs do balance we have found EE
+		 * tasks (identified with migrate_task_inv).
 		 */
 		if ((env->sd->flags & SD_ASYM_PACKING) &&
 		    sched_use_asym_prio(env->sd, i) &&
 		    sched_asym_prefer(i, env->dst_cpu) &&
-		    nr_running == 1)
+		    nr_running == 1 &&
+		    env->migration_type != migrate_task_inv)
 			continue;
 
 		switch (env->migration_type) {
