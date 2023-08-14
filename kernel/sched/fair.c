@@ -8813,6 +8813,10 @@ static struct task_struct *detach_one_task(struct lb_env *env)
 		if (!can_migrate_task(p, env))
 			continue;
 
+		if (sched_asym_prefer(env->dst_cpu, env->src_cpu) &&
+		    p->qos_hints & EQOS_MAX_EFFICIENCY)
+			continue;
+
 		detach_task(p, env);
 
 		/*
