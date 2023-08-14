@@ -11049,14 +11049,29 @@ asym_active_balance(struct lb_env *env)
 	 * CPUs. When done between cores, do it only if the whole core if the
 	 * whole core is idle.
 	 *
+	 */
+	if (env->idle == CPU_NOT_IDLE)
+		return false;
+
+	if (!(env->sd->flags & SD_ASYM_PACKING))
+		return false;
+
+	/*
+	 * Should we consider the priority of env::dst_cpu? See the definition
+	 * of the function for details.
+	 */
+	if (!sched_use_asym_prio(env->sd, env->dst_cpu))
+		return false;
+
+	if (sched_asym_prefer(env->dst_cpu, env->src_cpu))
+		return true;
+
+	/*
 	 * If @env::src_cpu is an SMT core with busy siblings, let
 	 * the lower priority @env::dst_cpu help it. Do not follow
 	 * CPU priority.
 	 */
-	return env->idle != CPU_NOT_IDLE && (env->sd->flags & SD_ASYM_PACKING) &&
-	       sched_use_asym_prio(env->sd, env->dst_cpu) &&
-	       (sched_asym_prefer(env->dst_cpu, env->src_cpu) ||
-		!sched_use_asym_prio(env->sd, env->src_cpu));
+	return !sched_use_asym_prio(env->sd, env->src_cpu);
 }
 
 static inline bool
