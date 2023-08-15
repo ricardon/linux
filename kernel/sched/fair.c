@@ -9797,6 +9797,7 @@ static inline void update_sg_lb_stats(struct lb_env *env,
 	/* Check if dst CPU is idle and preferred to this group */
 	if (!local_group && env->sd->flags & SD_ASYM_PACKING &&
 	    env->idle != CPU_NOT_IDLE && sgs->sum_h_nr_running &&
+	    !sgs->has_eqos_ee &&
 	    sched_asym(env, sds, sgs, group, false)) {
 		sgs->group_asym_packing = 1;
 	}
