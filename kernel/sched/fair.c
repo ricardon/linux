@@ -11018,6 +11018,17 @@ static struct rq *find_busiest_queue(struct lb_env *env,
 			if (busiest_nr < nr_running) {
 				busiest_nr = nr_running;
 				busiest = rq;
+			} else if (busiest_nr == nr_running) {
+				/* Prefer a queue that has EQOS_MAX_EFFICIENCY tasks */
+				u64 qos_hints;
+				int ret;
+
+				ret = rq_last_task_eqos(env->dst_cpu, rq, &qos_hints);
+				if (ret)
+					break;
+
+				if (qos_hints & EQOS_MAX_EFFICIENCY)
+					busiest = rq;
 			}
 			break;
 
