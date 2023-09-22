@@ -11856,8 +11856,14 @@ static void nohz_balancer_kick(struct rq *rq)
 		for_each_cpu_and(i, sched_domain_span(sd), nohz.idle_cpus_mask) {
 			if (sched_use_asym_prio(sd, i) &&
 			    sched_asym_prefer(i, cpu)) {
-				flags = NOHZ_STATS_KICK | NOHZ_BALANCE_KICK;
-				goto unlock;
+				u64 qos_hints;
+				int ret;
+
+				ret = rq_last_task_eqos(i, rq, &qos_hints);
+				if (!ret && !(qos_hints & EQOS_MAX_EFFICIENCY)) {
+					flags = NOHZ_STATS_KICK | NOHZ_BALANCE_KICK;
+					goto unlock;
+				}
 			}
 		}
 	}
