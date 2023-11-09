@@ -10510,6 +10510,32 @@ static inline void calculate_imbalance(struct lb_env *env, struct sd_lb_stats *s
 			return;
 		}
 
+		/*
+		 * If we are hare the local group has spare capacity. For an
+		 * SMT core this usually means that there are idle cores .It
+		 * could also mean that it has low-utilization tasks, which
+		 * also lead to idle time.
+		 *
+		 * If the busiest group is overloaded, then the idle siblings
+		 * of the SMT core can help to relieve load. Pull as many tasks
+		 * as idle siblings.
+		 *
+		 * If the tasks in the local core grow in utilization the will
+		 * be eventually balanced.
+		 */
+		if (sds->local->flags & SD_SHARE_CPUCAPACITY &&
+		    busiest->group_type > group_fully_busy) {
+			env->migration_type = migrate_task;
+			/*
+			 * We only want to pull as many tasks as needed to
+			 * relieve the overloaded condition of busiest, but
+			 * only as many as idle siblings in the local group.
+			 */
+			env->imbalance = min_t(long, local->idle_cpus,
+					       busiest->sum_nr_running - busiest->idle_cpus);
+			return;
+		}
+
 		if (busiest->group_weight == 1 || sds->prefer_sibling) {
 			/*
 			 * When prefer sibling, evenly spread running tasks on
