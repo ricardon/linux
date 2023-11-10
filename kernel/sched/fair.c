@@ -11063,6 +11063,10 @@ asym_active_balance(struct lb_env *env)
 	if (!sched_use_asym_prio(env->sd, env->dst_cpu))
 		return false;
 
+	/* env::src_cpu has  EE tasks. Move them to a lower-priority CPU. */
+	if (env->migration_type == migrate_task_inv)
+		return sched_asym_prefer(env->src_cpu, env->dst_cpu);
+
 	if (sched_asym_prefer(env->dst_cpu, env->src_cpu))
 		return true;
 
